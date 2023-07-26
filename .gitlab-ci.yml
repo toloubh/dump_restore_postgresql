@@ -1,0 +1,45 @@
+image: ubuntu:latest
+
+stages:
+  - get_dump
+  - transfer_dump
+  - restore_dump
+
+variables:
+  DUMP_SERVER_ADDRESS: "x.x.x.x"  # Replace this with your actual source server address
+  RESTORE_SERVER_ADDRESS: "y.y.y.y"  # Replace this with your actual destination server address
+  backup_dir: /var/backups/databases/
+
+get_dump_script:
+  stage: get_dump
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^dump_.*/' 
+  script:
+    - apt-get update
+    - apt-get install -y openssh-client  # Install openssh-client to get the scp command
+    - scp -o StrictHostKeyChecking=no dump_restore/get_dump.sh database@$DUMP_SERVER_ADDRESS:/home/database
+    - ssh -o StrictHostKeyChecking=no database@$DUMP_SERVER_ADDRESS "bash /home/database/get_dump.sh"
+
+transfer_dump_script:
+  stage: transfer_dump
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^dump_.*/' 
+  script:
+    - >
+      if [ "$DUMP_SERVER_ADDRESS" = "$RESTORE_SERVER_ADDRESS" ]; then
+        echo "The dump and restore servers are the same. Skipping transfer stage."
+      else
+        scp -o StrictHostKeyChecking=no database@$DUMP_SERVER_ADDRESS:"$backup_dir/*" database@$RESTORE_SERVER_ADDRESS:"$backup_dir"
+      fi
+
+restore_dump_script:
+  stage: restore_dump
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^restore_.*/' 
+  script:
+    - chmod +x dump_restore/restore_dump.sh
+    - apt-get update
+    - apt-get install -y openssh-client  # Install openssh-client to get the scp command
+    - scp -o StrictHostKeyChecking=no dump_restore/restore_dump.sh database@$RESTORE_SERVER_ADDRESS:/home/database
+    - ssh -o StrictHostKeyChecking=no database@$RESTORE_SERVER_ADDRESS "bash /home/database/restore_dump.sh"
+
